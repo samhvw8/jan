@@ -75,6 +75,8 @@ pub fn run() {
             // hardware
             core::hardware::get_system_info,
             core::hardware::get_system_usage,
+            // File processing
+            core::cmd::process_file_upload,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),

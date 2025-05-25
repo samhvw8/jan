@@ -1,4 +1,5 @@
 pub mod cmd;
+pub mod file_processor;
 pub mod fs;
 pub mod mcp;
 pub mod server;

@@ -4,7 +4,7 @@ use std::{fs, io, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_plugin_updater::UpdaterExt;
 
-use super::{server, setup, state::AppState};
+use super::{file_processor::FileProcessor, server, setup, state::AppState};
 
 const CONFIGURATION_FILE_NAME: &str = "settings.json";
 
@@ -311,6 +311,109 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn process_file_upload(file_path: String) -> Result<super::file_processor::ProcessedFile, String> {
+    log::info!("=== FILE UPLOAD PROCESSING STARTED ===");
+    log::info!("Received file path: {}", file_path);
+    
+    // Additional security check: ensure the file path is absolute and doesn't contain suspicious patterns
+    let path = std::path::PathBuf::from(&file_path);
+    log::debug!("Converted to PathBuf: {:?}", path);
+    log::debug!("Path is absolute: {}", path.is_absolute());
+    log::debug!("Path exists: {}", path.exists());
+    log::debug!("Path is file: {}", path.is_file());
+    
+    // Validate that the file exists and is readable
+    if !path.exists() {
+        log::error!("VALIDATION FAILED: File does not exist: {}", file_path);
+        return Err(format!("File does not exist: {}", file_path));
+    }
+    
+    if !path.is_file() {
+        log::error!("VALIDATION FAILED: Path is not a file: {}", file_path);
+        return Err(format!("Path is not a file: {}", file_path));
+    }
+    
+    // Log file metadata for debugging
+    match std::fs::metadata(&path) {
+        Ok(metadata) => {
+            log::debug!("File metadata - Size: {} bytes, Modified: {:?}, Readonly: {}",
+                       metadata.len(), metadata.modified(), metadata.permissions().readonly());
+        }
+        Err(e) => {
+            log::error!("Failed to get file metadata: {}", e);
+        }
+    }
+    
+    // Check if file type is supported
+    let is_supported = FileProcessor::is_supported_file(&path);
+    log::debug!("File type supported: {}", is_supported);
+    
+    if !is_supported {
+        let supported_types = FileProcessor::get_supported_extensions().join(", ");
+        log::error!("VALIDATION FAILED: Unsupported file type. Supported types: {}", supported_types);
+        return Err(format!(
+            "Unsupported file type. Supported types: {}",
+            supported_types
+        ));
+    }
+    
+    log::info!("All validations passed, starting file processing...");
+    
+    // Process the file
+    match FileProcessor::process_file(&path) {
+        Ok(processed_file) => {
+            log::info!(
+                "=== FILE PROCESSING SUCCESSFUL ===\nFile: {}\nSize: {} bytes\nType: {}\nEncoding: {:?}\nProcessing time: {} ms\nContent length: {} characters",
+                processed_file.metadata.name,
+                processed_file.metadata.size,
+                processed_file.metadata.file_type,
+                processed_file.metadata.encoding,
+                processed_file.processing_time,
+                processed_file.content.len()
+            );
+            
+            // Log first 200 characters of content for debugging (be careful with sensitive data)
+            let preview = if processed_file.content.len() > 200 {
+                format!("{}...", &processed_file.content[..200])
+            } else {
+                processed_file.content.clone()
+            };
+            log::debug!("Content preview: {}", preview);
+            
+            Ok(processed_file)
+        }
+        Err(e) => {
+            log::error!("=== FILE PROCESSING FAILED ===");
+            log::error!("File: {}", file_path);
+            log::error!("Error: {}", e);
+            log::error!("Error type: {:?}", std::mem::discriminant(&e));
+            
+            // Log additional context based on error type
+            match &e {
+                super::file_processor::FileProcessingError::FileNotFound(path) => {
+                    log::error!("File not found details: {}", path);
+                }
+                super::file_processor::FileProcessingError::UnsupportedFileType(ext) => {
+                    log::error!("Unsupported file extension: {}", ext);
+                }
+                super::file_processor::FileProcessingError::FileTooLarge { size, max } => {
+                    log::error!("File too large: {} bytes (max: {} bytes)", size, max);
+                }
+                super::file_processor::FileProcessingError::IoError(io_err) => {
+                    log::error!("IO Error details: {}", io_err);
+                    log::error!("IO Error kind: {:?}", io_err.kind());
+                }
+                _ => {
+                    log::error!("Other error type encountered");
+                }
+            }
+            
+            Err(format!("Failed to process file: {}", e))
+        }
+    }
 }
 
 #[tauri::command]

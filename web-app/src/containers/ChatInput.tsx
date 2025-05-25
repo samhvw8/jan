@@ -8,7 +8,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 import {
-  IconPaperclip,
   IconWorld,
   IconAtom,
   IconEye,
@@ -31,6 +30,8 @@ import { getTools } from '@/services/mcp'
 import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
+import FileUpload from '@/components/FileUpload'
+import { ProcessedFile } from '@/types/files'
 
 type ChatInputProps = {
   className?: string
@@ -58,6 +59,7 @@ const ChatInput = ({
   const { selectedModel } = useModelProvider()
   const { sendMessage } = useChat()
   const [message, setMessage] = useState('')
+  const [attachedFile, setAttachedFile] = useState<ProcessedFile | null>(null)
 
   const handleSendMesage = (prompt: string) => {
     if (!selectedModel) {
@@ -65,7 +67,15 @@ const ChatInput = ({
       return
     }
     setMessage('')
-    sendMessage(prompt)
+    
+    // Combine user message with file content if file is attached
+    let finalMessage = prompt
+    if (attachedFile) {
+      finalMessage = `${prompt}\n\n[File: ${attachedFile.metadata.name}]\n${attachedFile.content}`
+      setAttachedFile(null) // Clear file after sending
+    }
+    
+    sendMessage(finalMessage)
   }
 
   useEffect(() => {
@@ -215,9 +225,11 @@ const ChatInput = ({
                 )}
 
                 {/* File attachment - always available */}
-                <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                  <IconPaperclip size={18} className="text-main-view-fg/50" />
-                </div>
+                <FileUpload
+                  onFileProcessed={(processedFile) => setAttachedFile(processedFile)}
+                  onFileRemoved={() => setAttachedFile(null)}
+                  disabled={Boolean(streamingContent)}
+                />
 
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">

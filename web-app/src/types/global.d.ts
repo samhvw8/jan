@@ -19,4 +19,10 @@ declare global {
   interface Window {
     core: AppCore | undefined
   }
+  
+  // Thread types
+  type ThreadModel = {
+    id: string
+    provider: string
+  }
 }
